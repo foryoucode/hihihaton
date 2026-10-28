@@ -1,6 +1,7 @@
 package validate
 
 type PlanRequest struct {
+	DatasetID         *int64   `json:"dataset_id"`
 	Method            string   `json:"method"`
 	Budget            *int     `json:"budget"`
 	Deadline          *int     `json:"deadline"`
@@ -9,6 +10,7 @@ type PlanRequest struct {
 }
 
 type SearchRequest struct {
+	DatasetID     *int64   `json:"dataset_id"`
 	EquipmentType string   `json:"equipment_type"`
 	Capacity      float64  `json:"capacity"`
 	Temperature   *float64 `json:"temperature"`

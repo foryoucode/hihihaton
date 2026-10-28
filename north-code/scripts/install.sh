@@ -6,7 +6,7 @@ cd "$NORTH_ROOT"
 go version
 node --version
 python3 -m venv .venv
-.venv/bin/python -m pip install -r engine/requirements.txt
+.venv/bin/python -m pip install -r solver/requirements.txt
 cd backend
 go mod download
 go build -o server ./cmd

@@ -4,9 +4,74 @@
 
 package db
 
+import (
+	"database/sql"
+	"encoding/json"
+	"time"
+)
+
+type Dataset struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	StationID   string    `json:"station_id"`
+	StationName string    `json:"station_name"`
+	Budget      int64     `json:"budget"`
+	Deadline    int32     `json:"deadline"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type Equipment struct {
+	DatasetID                int64   `json:"dataset_id"`
+	EquipmentID              string  `json:"equipment_id"`
+	ModelName                string  `json:"model_name"`
+	EquipmentType            string  `json:"equipment_type"`
+	Capacity                 float64 `json:"capacity"`
+	CapacityUnit             string  `json:"capacity_unit"`
+	MinOperatingTemperatureC float64 `json:"min_operating_temperature_c"`
+	InstallationDays         int32   `json:"installation_days"`
+}
+
+type Object struct {
+	DatasetID  int64  `json:"dataset_id"`
+	ObjectID   string `json:"object_id"`
+	ObjectName string `json:"object_name"`
+	Optional   bool   `json:"optional"`
+}
+
+type Offer struct {
+	DatasetID     int64  `json:"dataset_id"`
+	OfferID       string `json:"offer_id"`
+	SupplierID    string `json:"supplier_id"`
+	EquipmentID   string `json:"equipment_id"`
+	EquipmentType string `json:"equipment_type"`
+	UnitPriceRub  int64  `json:"unit_price_rub"`
+	StockQuantity int32  `json:"stock_quantity"`
+}
+
 type Plan struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Result    string `json:"result"`
-	CreatedAt string `json:"created_at"`
+	ID        int64           `json:"id"`
+	DatasetID int64           `json:"dataset_id"`
+	Name      string          `json:"name"`
+	Result    json.RawMessage `json:"result"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+type Requirement struct {
+	DatasetID             int64          `json:"dataset_id"`
+	ObjectID              string         `json:"object_id"`
+	EquipmentType         string         `json:"equipment_type"`
+	RequiredCapacity      float64        `json:"required_capacity"`
+	CapacityUnit          string         `json:"capacity_unit"`
+	OperatingTemperatureC float64        `json:"operating_temperature_c"`
+	InstalledEquipmentID  sql.NullString `json:"installed_equipment_id"`
+	AvailableCapacity     float64        `json:"available_capacity"`
+	Position              int32          `json:"position"`
+}
+
+type Supplier struct {
+	DatasetID       int64  `json:"dataset_id"`
+	SupplierID      string `json:"supplier_id"`
+	SupplierName    string `json:"supplier_name"`
+	DeliveryCostRub int64  `json:"delivery_cost_rub"`
+	DeliveryDays    int32  `json:"delivery_days"`
 }

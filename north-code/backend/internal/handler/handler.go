@@ -11,7 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"north-code/internal/planner"
 	"north-code/internal/service"
 	"north-code/validate"
 )
@@ -30,13 +32,17 @@ func (h *Handler) InitRoutes(staticDir string) *gin.Engine {
 
 	api := router.Group("/api")
 	api.Use(func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024*1024)
+		limit := int64(1024 * 1024)
+		if c.Request.URL.Path == "/api/import" {
+			limit = 10 * 1024 * 1024
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	})
 	{
 		api.GET("/health", h.Health)
 		api.GET("/data", h.Data)
-		api.GET("/experiments", h.Experiments)
+		api.POST("/import", h.Import)
 		api.POST("/search", h.Search)
 		api.POST("/calculate", h.Calculate)
 		api.GET("/plans", h.ListPlans)
@@ -77,11 +83,11 @@ func (h *Handler) sendError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		c.JSON(http.StatusNotFound, gin.H{"message": "План не найден"})
-	case errors.Is(err, service.ErrNeuralUnavailable):
-		c.JSON(http.StatusBadGateway, gin.H{"message": "Сервис нейросети недоступен. Точный расчёт продолжает работать."})
-	case errors.Is(err, service.ErrInvalidRecommendation):
-		c.JSON(http.StatusBadGateway, gin.H{"message": "Ответ нейросети не прошёл проверку ограничений. План не сохранён."})
-	case errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, service.ErrSolverUnavailable):
+		c.JSON(http.StatusBadGateway, gin.H{"message": "Сервис OR-Tools недоступен или занят. Основной Go-расчёт продолжает работать."})
+	case errors.Is(err, service.ErrInvalidResult):
+		c.JSON(http.StatusBadGateway, gin.H{"message": "Ответ решателя не прошёл проверку ограничений. План не сохранён."})
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, service.ErrSolverTimeout):
 		c.JSON(http.StatusGatewayTimeout, gin.H{"message": "Расчёт не завершён в установленное время. Оптимальность не подтверждена."})
 	default:
 		slog.Error(err.Error())
@@ -99,21 +105,17 @@ func (h *Handler) Health(c *gin.Context) {
 }
 
 func (h *Handler) Data(c *gin.Context) {
-	result, err := h.service.Data()
+	id, err := datasetID(c)
+	if err != nil {
+		h.sendError(c, err)
+		return
+	}
+	result, err := h.service.Data(c.Request.Context(), id)
 	if err != nil {
 		h.sendError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
-}
-
-func (h *Handler) Experiments(c *gin.Context) {
-	result, err := h.service.Model()
-	if err != nil {
-		h.sendError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"report": result})
 }
 
 func (h *Handler) Search(c *gin.Context) {
@@ -123,7 +125,7 @@ func (h *Handler) Search(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.Search(req)
+	result, err := h.service.Search(c.Request.Context(), req)
 	if err != nil {
 		h.sendError(c, err)
 		return
@@ -225,4 +227,51 @@ func (h *Handler) DeletePlan(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+func datasetID(c *gin.Context) (*int64, error) {
+	value := c.Query("dataset_id")
+	if value == "" {
+		return nil, nil
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id < 1 {
+		return nil, service.ErrBadRequest
+	}
+	return &id, nil
+}
+
+func (h *Handler) Import(c *gin.Context) {
+	data := &planner.Data{}
+	files := []struct {
+		name   string
+		target *[]planner.Row
+	}{
+		{"equipment", &data.Equipment}, {"offers", &data.Offers}, {"suppliers", &data.Suppliers}, {"station", &data.Station},
+	}
+	for _, item := range files {
+		header, err := c.FormFile(item.name)
+		if err != nil {
+			h.sendError(c, fmt.Errorf("%w: нужен CSV-файл %s", service.ErrBadRequest, item.name))
+			return
+		}
+		file, err := header.Open()
+		if err != nil {
+			h.sendError(c, err)
+			return
+		}
+		rows, parseErr := planner.ParseCSV(file)
+		file.Close()
+		if parseErr != nil {
+			h.sendError(c, fmt.Errorf("%w: %s: %v", service.ErrBadRequest, item.name, parseErr))
+			return
+		}
+		*item.target = rows
+	}
+	result, err := h.service.Import(c.Request.Context(), c.PostForm("name"), data)
+	if err != nil {
+		h.sendError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }

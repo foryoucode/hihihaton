@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
+
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -18,59 +18,75 @@ import (
 )
 
 var (
-	ErrBadRequest            = errors.New("некорректный запрос")
-	ErrNeuralUnavailable     = errors.New("сервис нейросети недоступен")
-	ErrInvalidRecommendation = errors.New("нейросеть вернула некорректный план")
+	ErrSolverTimeout     = errors.New("OR-Tools не подтвердил оптимальность за отведённое время")
+	ErrBadRequest        = errors.New("некорректный запрос")
+	ErrSolverUnavailable = errors.New("сервис OR-Tools недоступен")
+	ErrInvalidResult     = errors.New("решатель вернул некорректный план")
 )
 
 type Service struct {
-	repo     *repository.Repository
-	neural   *NeuralClient
-	dataDir  string
-	modelDir string
+	repo    *repository.Repository
+	solver  *SolverClient
+	dataDir string
 }
 
-func NewService(repo *repository.Repository, dataDir, modelDir, neuralURL string) *Service {
-	return &Service{repo: repo, dataDir: dataDir, modelDir: modelDir, neural: NewNeuralClient(neuralURL)}
+func NewService(repo *repository.Repository, dataDir, solverURL string) *Service {
+	return &Service{repo: repo, dataDir: dataDir, solver: NewSolverClient(solverURL)}
 }
 
-func (s *Service) Model() (json.RawMessage, error) {
-	raw, err := os.ReadFile(filepath.Join(s.modelDir, "metrics.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return json.RawMessage("null"), nil
+func (s *Service) EnsureData(ctx context.Context) error {
+	_, _, err := s.repo.Data(ctx, nil)
+	if err == nil {
+		return nil
 	}
-	if err != nil {
-		return nil, err
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
 	}
-	if !json.Valid(raw) {
-		return nil, fmt.Errorf("некорректный отчёт экспериментов")
-	}
-
-	return json.RawMessage(raw), nil
-}
-
-func (s *Service) Data() (map[string]any, error) {
 	data, err := planner.Load(s.dataDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	model, err := s.Model()
+	_, err = s.Import(ctx, "Учебная станция", data)
+	return err
+}
+
+func (s *Service) Data(ctx context.Context, id *int64) (map[string]any, error) {
+	data, dataset, err := s.repo.Data(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	return map[string]any{"equipment": data.Equipment, "offers": data.Offers, "suppliers": data.Suppliers, "station": data.Station, "dataset": dataset}, nil
+}
 
-	return map[string]any{"equipment": data.Equipment, "offers": data.Offers, "suppliers": data.Suppliers,
-		"station": data.Station, "model": model}, nil
+func (s *Service) Import(ctx context.Context, title string, data *planner.Data) (map[string]any, error) {
+	if title == "" {
+		title = "Импорт CSV"
+	}
+	title, err := name(title)
+	if err != nil {
+		return nil, err
+	}
+	if err := data.Validate(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
+	}
+	if _, err := planner.Prepare(data, planner.Integer(data.Station[0], "deadline_days")); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
+	}
+	dataset, err := s.repo.Import(ctx, title, data)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"dataset": dataset, "counts": map[string]int{"equipment": len(data.Equipment), "suppliers": len(data.Suppliers), "offers": len(data.Offers), "requirements": len(data.Station)}}, nil
 }
 
 func (s *Service) Health(ctx context.Context) (map[string]any, error) {
 	if err := s.repo.Ping(ctx); err != nil {
 		return nil, err
 	}
-	return map[string]any{"status": "ok", "model_ready": s.neural.Health(ctx), "storage": "sqlite", "exact_backend": "go"}, nil
+	return map[string]any{"status": "ok", "ortools_ready": s.solver.Health(ctx), "storage": "postgresql", "exact_backend": "go"}, nil
 }
 
-func (s *Service) Search(req validate.SearchRequest) ([]planner.Row, error) {
+func (s *Service) Search(ctx context.Context, req validate.SearchRequest) ([]planner.Row, error) {
 	temperature := -30.0
 	if req.Temperature != nil {
 		temperature = *req.Temperature
@@ -82,13 +98,11 @@ func (s *Service) Search(req validate.SearchRequest) ([]planner.Row, error) {
 		return nil, ErrBadRequest
 	}
 
-	rows, err := planner.ReadCSV(filepath.Join(s.dataDir, "equipment.csv"))
+	data, _, err := s.repo.Data(ctx, req.DatasetID)
 	if err != nil {
 		return nil, err
 	}
-	if err := planner.ValidateEquipment(rows); err != nil {
-		return nil, err
-	}
+	rows := data.Equipment
 
 	items := []planner.Row{}
 	for _, row := range rows {
@@ -100,7 +114,7 @@ func (s *Service) Search(req validate.SearchRequest) ([]planner.Row, error) {
 }
 
 func (s *Service) Calculate(ctx context.Context, req validate.PlanRequest) (map[string]any, error) {
-	data, err := planner.Load(s.dataDir)
+	data, dataset, err := s.repo.Data(ctx, req.DatasetID)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +128,7 @@ func (s *Service) Calculate(ctx context.Context, req validate.PlanRequest) (map[
 	if req.Method == "" {
 		req.Method = "exact"
 	}
-	if budget < 0 || budget > 100000000 || deadline < 1 || deadline > 365 || (req.Method != "exact" && req.Method != "neural") {
+	if budget < 0 || budget > 100000000 || deadline < 1 || deadline > 365 || (req.Method != "exact" && req.Method != "ortools") {
 		return nil, ErrBadRequest
 	}
 
@@ -148,15 +162,15 @@ func (s *Service) Calculate(ctx context.Context, req validate.PlanRequest) (map[
 	if req.Method == "exact" {
 		variants, err = planner.Exact(ctx, data, prepared)
 	} else {
-		variants, err = s.neural.Recommend(ctx, prepared)
+		variants, err = s.solver.Solve(ctx, prepared)
 	}
 	if err != nil {
 		return nil, err
 	}
 	result, err := planner.Result(data, prepared, variants, budget, req.Method)
 	if err != nil {
-		if req.Method == "neural" {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidRecommendation, err)
+		if req.Method == "ortools" {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 		}
 		return nil, err
 	}
@@ -165,6 +179,8 @@ func (s *Service) Calculate(ctx context.Context, req validate.PlanRequest) (map[
 	}
 	result["seconds"] = math.Round(time.Since(start).Seconds()*1000) / 1000
 	result["disabled_suppliers"] = req.DisabledSuppliers
+	result["dataset_id"] = dataset.ID
+	result["dataset_name"] = dataset.Name
 
 	return result, nil
 }
@@ -190,7 +206,7 @@ func (s *Service) Create(ctx context.Context, req validate.PlanRequest) (reposit
 	if err != nil {
 		return repository.Plan{}, err
 	}
-	return s.repo.Create(ctx, title, raw)
+	return s.repo.Create(ctx, result["dataset_id"].(int64), title, raw)
 }
 
 func (s *Service) Get(ctx context.Context, id int64) (repository.Plan, error) {

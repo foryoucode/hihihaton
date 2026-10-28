@@ -6,22 +6,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"north-code/db"
 )
 
 func main() {
-	root := os.Getenv("NORTH_ROOT")
-	if root == "" {
-		root = ".."
-	}
-	path := os.Getenv("NORTH_DB_PATH")
-	if path == "" {
-		path = filepath.Join(root, "runtime", "plans.db")
-	}
-	conn, err := db.Open(path)
+	conn, err := db.Open(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}

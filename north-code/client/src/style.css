@@ -901,7 +901,7 @@ td strong {
     border-color: #4b6344;
 }
 
-.neural-note {
+.solver-note {
     color: #c7c6e0;
     background: #24283b;
     border-color: #454a68;
@@ -1277,3 +1277,9 @@ td strong {
         transform: none;
     }
 }
+
+.dataset-bar { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; color: #a7b8b9; font-size: 12px; }
+.import-form { display: grid; gap: 22px; }
+.import-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.import-form .primary-btn { justify-self: start; }
+@media (max-width: 800px) { .import-grid { grid-template-columns: 1fr; } .dataset-bar { flex-wrap: wrap; } }

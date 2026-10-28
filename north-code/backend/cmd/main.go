@@ -32,11 +32,7 @@ func main() {
 	if root == "" {
 		root = ".."
 	}
-	path := os.Getenv("NORTH_DB_PATH")
-	if path == "" {
-		path = filepath.Join(root, "runtime", "plans.db")
-	}
-	conn, err := db.Open(path)
+	conn, err := db.Open(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
@@ -51,9 +47,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	neuralURL := os.Getenv("NEURAL_URL")
-	if neuralURL == "" {
-		neuralURL = "http://127.0.0.1:8091"
+	solverURL := os.Getenv("SOLVER_URL")
+	if solverURL == "" {
+		solverURL = "http://127.0.0.1:8091"
 	}
 	address := os.Getenv("APP_ADDRESS")
 	if address == "" {
@@ -65,7 +61,11 @@ func main() {
 	}
 
 	repo := repository.NewRepository(conn)
-	services := service.NewService(repo, filepath.Join(root, "data"), filepath.Join(root, "engine", "models"), neuralURL)
+	services := service.NewService(repo, filepath.Join(root, "data"), solverURL)
+	if err := services.EnsureData(context.Background()); err != nil {
+		slog.Error("Ошибка начального импорта CSV", "error", err)
+		os.Exit(1)
+	}
 	handlers := handler.NewHandler(services)
 	server := &http.Server{
 		Addr: address, Handler: handlers.InitRoutes(staticDir),
@@ -73,7 +73,7 @@ func main() {
 		ReadTimeout:       15 * time.Second, WriteTimeout: 130 * time.Second,
 	}
 
-	slog.Info("Северный код запущен", "address", address, "database", path)
+	slog.Info("Северный код запущен", "address", address, "storage", "postgresql")
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error(err.Error())
 		os.Exit(1)

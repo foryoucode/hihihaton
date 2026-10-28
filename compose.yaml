@@ -9,17 +9,22 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       NORTH_ROOT: /app
-      NORTH_DB_PATH: /app/runtime/plans.db
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: north
+      PGUSER: north
+      PGPASSWORD: ${POSTGRES_PASSWORD:-north-local}
+      PGSSLMODE: disable
       APP_ADDRESS: 0.0.0.0:8080
       STATIC_DIR: /app/client/dist
-      NEURAL_URL: http://neural:8091
-      NO_PROXY: neural,localhost,127.0.0.1
-      no_proxy: neural,localhost,127.0.0.1
+      SOLVER_URL: http://solver:8091
+      NO_PROXY: solver,db,localhost,127.0.0.1
+      no_proxy: solver,db,localhost,127.0.0.1
       GIN_MODE: release
-    volumes:
-      - station_data:/app/runtime
     depends_on:
-      neural:
+      db:
+        condition: service_healthy
+      solver:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/server", "--healthcheck"]
@@ -29,20 +34,34 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  neural:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: north
+      POSTGRES_USER: north
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-north-local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U north -d north"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  solver:
     build:
       context: ./north-code
-      dockerfile: docker/neural.Dockerfile
+      dockerfile: docker/solver.Dockerfile
     environment:
-      NEURAL_HOST: 0.0.0.0
-      NEURAL_PORT: "8091"
-      OPENBLAS_NUM_THREADS: "1"
+      SOLVER_HOST: 0.0.0.0
+      SOLVER_PORT: "8091"
     healthcheck:
       test:
         - CMD
         - python
         - -c
-        - "import json,urllib.request; client=urllib.request.build_opener(urllib.request.ProxyHandler({})); response=client.open('http://127.0.0.1:8091/health',timeout=3); assert json.load(response)['model_ready']"
+        - "import json,urllib.request; client=urllib.request.build_opener(urllib.request.ProxyHandler({})); response=client.open('http://127.0.0.1:8091/health',timeout=3); assert json.load(response)['status']=='ok'"
       interval: 5s
       timeout: 5s
       retries: 6
@@ -50,4 +69,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  station_data:
+  postgres_data:

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Row map[string]string
@@ -37,7 +38,11 @@ func ReadCSV(path string) ([]Row, error) {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
+	return ParseCSV(file)
+}
+
+func ParseCSV(input io.Reader) ([]Row, error) {
+	reader := csv.NewReader(input)
 	reader.Comma = ';'
 	header, err := reader.Read()
 	if err != nil {
@@ -46,8 +51,11 @@ func ReadCSV(path string) ([]Row, error) {
 	header[0] = strings.TrimPrefix(header[0], "\ufeff")
 	seen := map[string]bool{}
 	for _, field := range header {
+		if !utf8.ValidString(field) {
+			return nil, fmt.Errorf("CSV должен быть в UTF-8")
+		}
 		if field == "" || seen[field] {
-			return nil, fmt.Errorf("повтор или пустое имя столбца: %s", path)
+			return nil, fmt.Errorf("повтор или пустое имя столбца")
 		}
 		seen[field] = true
 	}
@@ -63,12 +71,15 @@ func ReadCSV(path string) ([]Row, error) {
 		}
 		row := Row{}
 		for i, field := range header {
-			row[field] = values[i]
+			if !utf8.ValidString(values[i]) {
+				return nil, fmt.Errorf("CSV должен быть в UTF-8")
+			}
+			row[field] = strings.TrimSpace(values[i])
 		}
 		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("пустой CSV: %s", path)
+		return nil, fmt.Errorf("пустой CSV")
 	}
 
 	return rows, nil
@@ -171,8 +182,24 @@ func (data *Data) Validate() error {
 	}
 
 	seen := map[string]bool{}
+	types := map[string]map[string]bool{}
+	for _, m := range data.Equipment {
+		if types[m["equipment_type"]] == nil {
+			types[m["equipment_type"]] = map[string]bool{}
+		}
+		types[m["equipment_type"]][m["capacity_unit"]] = true
+	}
 	objects := map[string]string{}
 	for _, row := range data.Station {
+		if !types[row["equipment_type"]][row["capacity_unit"]] {
+			return fmt.Errorf("неизвестный тип или единицы потребности: %s", row["object_id"])
+		}
+		if row["installed_equipment_id"] == "NONE" && Number(row, "available_capacity") != 0 {
+			return fmt.Errorf("у отсутствующего оборудования не может быть доступной мощности")
+		}
+		if Integer(row, "deadline_days") > 365 || Integer(row, "recommended_budget_rub") > 100000000 {
+			return fmt.Errorf("срок должен быть до 365 дней, бюджет до 100 млн")
+		}
 		key := row["object_id"] + ":" + row["equipment_type"]
 		if err := checkRows([]Row{row}, "object_id", []string{"recommended_budget_rub", "deadline_days"},
 			[]string{"required_capacity", "available_capacity", "operating_temperature_c"},

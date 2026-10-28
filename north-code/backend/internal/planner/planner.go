@@ -1,8 +1,10 @@
 package planner
 
 import (
+	"context"
 	"fmt"
 	"sort"
+	"time"
 )
 
 type Need struct {
@@ -251,19 +253,35 @@ func Result(data *Data, p *Prepared, variants []Variant, budget int, method stri
 	diagnosis, _ := Diagnose(data)
 	if len(variants) == 0 {
 		missing := []map[string]string{}
-		for _, req := range p.Needs {
-			if req.Optional == "no" {
-				reason := "Требуется совместное распределение доступных остатков"
-				if len(p.Candidates[req.Key]) == 0 {
-					reason = "Нет подходящих предложений к сроку"
-				}
-				missing = append(missing, map[string]string{"object_id": req.ObjectID, "equipment_type": req.EquipmentType, "reason": reason})
+		allowed := map[string]bool{}
+		for _, supplier := range data.Suppliers {
+			allowed[supplier["supplier_id"]] = true
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		partial, _, err := assign(ctx, p.Required(nil), p.Candidates, allowed)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		covered := map[string]bool{}
+		for _, item := range partial {
+			covered[item.Key] = true
+		}
+		for _, req := range p.Required(nil) {
+			if covered[req.Key] {
+				continue
 			}
+			reason := "Общего остатка подходящих предложений недостаточно"
+			if len(p.Candidates[req.Key]) == 0 {
+				reason = "Нет подходящих предложений к сроку"
+			}
+			missing = append(missing, map[string]string{"object_id": req.ObjectID, "equipment_type": req.EquipmentType, "reason": reason})
 		}
 		status, message := "infeasible", "Обязательное восстановление невозможно"
-		if method == "neural" {
-			status, message = "not_found", "Нейросеть не нашла допустимый план. Это не доказывает невозможность восстановления."
+		if len(missing) == 0 {
+			return nil, fmt.Errorf("решатель не вернул план, хотя обязательные потребности можно обеспечить")
 		}
+
 		return map[string]any{"status": status, "method": method, "message": message, "uncovered": missing,
 			"budget": budget, "deadline": p.Deadline, "diagnosis": diagnosis}, nil
 	}
@@ -272,6 +290,9 @@ func Result(data *Data, p *Prepared, variants []Variant, budget int, method stri
 	frontier := map[int]Variant{}
 	for _, variant := range variants {
 		if err := Validate(p, variant); err != nil {
+			return nil, err
+		}
+		if err := CheckPlan(data, variant, p.Deadline); err != nil {
 			return nil, err
 		}
 		variant = Total(data, variant, budget)
@@ -314,13 +335,10 @@ func Result(data *Data, p *Prepared, variants []Variant, budget int, method stri
 			rows = append(rows, map[string]any{"optional_count": count, "cost": row.Cost, "selected": row.Selected})
 		}
 	}
-	warning := ""
-	if method == "neural" {
-		warning = "Экспериментальная нейросеть обучена на синтетических сценариях. Оптимальность не гарантируется. Точный решатель не вызывается."
-	}
-	return map[string]any{"status": "ok", "method": method, "optimal": method == "exact", "validated": true,
+
+	return map[string]any{"status": "ok", "method": method, "optimal": true, "validated": true,
 		"budget": budget, "deadline": p.Deadline, "balance": max(0, budget-best.Cost), "optional_count": len(best.Selected),
 		"cost": best.Cost, "overrun": best.Overrun, "equipment_cost": best.EquipmentCost, "delivery_cost": best.DeliveryCost,
 		"selected": best.Selected, "plan": best.Plan, "objects": objects, "ready_days": ready,
-		"frontier": rows, "diagnosis": diagnosis, "warning": warning}, nil
+		"frontier": rows, "diagnosis": diagnosis}, nil
 }

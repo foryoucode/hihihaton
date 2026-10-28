@@ -39,6 +39,11 @@ func (g graph) flow(ctx context.Context, source, sink, target int) (bool, error)
 		queued[source] = true
 
 		for head := 0; head < len(queue); head++ {
+			if head%128 == 0 {
+				if err := ctx.Err(); err != nil {
+					return false, err
+				}
+			}
 			from := queue[head]
 			queued[from] = false
 			for i, e := range g[from] {
@@ -109,7 +114,7 @@ func assign(ctx context.Context, required []Need, candidates map[string][]Candid
 		}
 	}
 	complete, err := g.flow(ctx, 0, sink, len(required))
-	if err != nil || !complete {
+	if err != nil {
 		return nil, false, err
 	}
 
@@ -119,10 +124,13 @@ func assign(ctx context.Context, required []Need, candidates map[string][]Candid
 			plan = append(plan, Purchase(ref.req, ref.offer))
 		}
 	}
-	return plan, true, nil
+	return plan, complete, nil
 }
 
 func Exact(ctx context.Context, data *Data, p *Prepared) ([]Variant, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	active := map[string]bool{}
 	for _, offers := range p.Candidates {
 		for _, offer := range offers {
@@ -155,6 +163,9 @@ func Exact(ctx context.Context, data *Data, p *Prepared) ([]Variant, error) {
 	best := map[int]Variant{}
 
 	for mask := 0; mask < 1<<len(p.Optional); mask++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		selected := []string{}
 		for i, key := range p.Optional {
 			if mask&(1<<i) != 0 {

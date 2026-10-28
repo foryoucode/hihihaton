@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -75,7 +76,7 @@ func TestTemperatureDiagnosisAndDeadline(t *testing.T) {
 	}
 }
 
-func TestRejectsInvalidNeuralAssignments(t *testing.T) {
+func TestRejectsInvalidSolverAssignments(t *testing.T) {
 	data := sourceData(t)
 	p, _ := Prepare(data, 14)
 	variants, _ := Exact(context.Background(), data, p)
@@ -183,5 +184,43 @@ func TestCancellationAndNumbers(t *testing.T) {
 	data.Equipment[0]["capacity"] = "NaN"
 	if data.Validate() == nil {
 		t.Fatal("NaN принят")
+	}
+}
+
+func TestIndependentCheckerRejectsTamperedCandidate(t *testing.T) {
+	data := sourceData(t)
+	prepared, _ := Prepare(data, 14)
+	variants, err := Exact(context.Background(), data, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := variants[0]
+	if err := CheckPlan(data, v, 14); err != nil {
+		t.Fatal(err)
+	}
+	v.Plan[0].Price = 1
+	for i := range prepared.Candidates[v.Plan[0].Key] {
+		if prepared.Candidates[v.Plan[0].Key][i].OfferID == v.Plan[0].OfferID {
+			prepared.Candidates[v.Plan[0].Key][i].Price = 1
+		}
+	}
+	if err := CheckPlan(data, v, 14); err == nil {
+		t.Fatal("проверка доверилась подменённым кандидатам")
+	}
+}
+
+func TestCSVRejectsBadEncodingAndDuplicateHeaders(t *testing.T) {
+	for _, source := range []string{"id;id\n1;2\n", string([]byte{0xff, 0xfe, 0x61}) + ";x\n1;2\n"} {
+		if _, err := ParseCSV(strings.NewReader(source)); err == nil {
+			t.Fatal("некорректный CSV принят")
+		}
+	}
+}
+
+func TestFalseInfeasibilityIsRejected(t *testing.T) {
+	data := sourceData(t)
+	prepared, _ := Prepare(data, 14)
+	if _, err := Result(data, prepared, []Variant{}, 2600000, "ortools"); err == nil {
+		t.Fatal("невозможность восстановления объявлена при наличии подходящего распределения")
 	}
 }

@@ -7,24 +7,25 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const createPlan = `-- name: CreatePlan :one
-INSERT INTO plans (name, result)
-VALUES (?, ?)
-RETURNING id, name, result, created_at
+INSERT INTO plans (dataset_id, name, result) VALUES ($1, $2, $3) RETURNING id, dataset_id, name, result, created_at
 `
 
 type CreatePlanParams struct {
-	Name   string `json:"name"`
-	Result string `json:"result"`
+	DatasetID int64           `json:"dataset_id"`
+	Name      string          `json:"name"`
+	Result    json.RawMessage `json:"result"`
 }
 
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
-	row := q.db.QueryRowContext(ctx, createPlan, arg.Name, arg.Result)
+	row := q.db.QueryRowContext(ctx, createPlan, arg.DatasetID, arg.Name, arg.Result)
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.DatasetID,
 		&i.Name,
 		&i.Result,
 		&i.CreatedAt,
@@ -33,7 +34,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 }
 
 const deletePlan = `-- name: DeletePlan :execrows
-DELETE FROM plans WHERE id = ?
+DELETE FROM plans WHERE id = $1
 `
 
 func (q *Queries) DeletePlan(ctx context.Context, id int64) (int64, error) {
@@ -45,7 +46,7 @@ func (q *Queries) DeletePlan(ctx context.Context, id int64) (int64, error) {
 }
 
 const getPlan = `-- name: GetPlan :one
-SELECT id, name, result, created_at FROM plans WHERE id = ?
+SELECT id, dataset_id, name, result, created_at FROM plans WHERE id = $1
 `
 
 func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
@@ -53,6 +54,7 @@ func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.DatasetID,
 		&i.Name,
 		&i.Result,
 		&i.CreatedAt,
@@ -61,7 +63,7 @@ func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
 }
 
 const listPlans = `-- name: ListPlans :many
-SELECT id, name, result, created_at FROM plans ORDER BY id DESC LIMIT 100
+SELECT id, dataset_id, name, result, created_at FROM plans ORDER BY id DESC LIMIT 100
 `
 
 func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
@@ -75,6 +77,7 @@ func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
 		var i Plan
 		if err := rows.Scan(
 			&i.ID,
+			&i.DatasetID,
 			&i.Name,
 			&i.Result,
 			&i.CreatedAt,
@@ -93,8 +96,7 @@ func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
 }
 
 const renamePlan = `-- name: RenamePlan :one
-UPDATE plans SET name = ? WHERE id = ?
-RETURNING id, name, result, created_at
+UPDATE plans SET name = $1 WHERE id = $2 RETURNING id, dataset_id, name, result, created_at
 `
 
 type RenamePlanParams struct {
@@ -107,6 +109,7 @@ func (q *Queries) RenamePlan(ctx context.Context, arg RenamePlanParams) (Plan, e
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.DatasetID,
 		&i.Name,
 		&i.Result,
 		&i.CreatedAt,
