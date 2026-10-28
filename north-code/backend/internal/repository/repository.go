@@ -1,47 +1,74 @@
 package repository
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
+	"database/sql"
+	"encoding/json"
+
+	db "north-code/internal/repository/sqlc"
 )
 
+type Plan struct {
+	ID        int64           `json:"id"`
+	Name      string          `json:"name"`
+	Result    json.RawMessage `json:"result"`
+	CreatedAt string          `json:"created_at"`
+}
+
 type Repository struct {
-	url    string
-	client *http.Client
+	db      *sql.DB
+	queries *db.Queries
 }
 
-func NewRepository(url string) *Repository {
-	return &Repository{
-		url:    strings.TrimRight(url, "/"),
-		client: &http.Client{Timeout: 120 * time.Second},
-	}
+func NewRepository(conn *sql.DB) *Repository {
+	return &Repository{db: conn, queries: db.New(conn)}
 }
 
-func (r *Repository) Request(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
-	req, err := http.NewRequestWithContext(ctx, method, r.url+path, bytes.NewReader(body))
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := r.client.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer res.Body.Close()
+func (r *Repository) Ping(ctx context.Context) error {
+	return r.db.PingContext(ctx)
+}
 
-	data, err := io.ReadAll(io.LimitReader(res.Body, 8*1024*1024+1))
+func plan(row db.Plan) Plan {
+	return Plan{ID: row.ID, Name: row.Name, Result: json.RawMessage(row.Result), CreatedAt: row.CreatedAt}
+}
+
+func (r *Repository) Create(ctx context.Context, name string, result json.RawMessage) (Plan, error) {
+	row, err := r.queries.CreatePlan(ctx, db.CreatePlanParams{Name: name, Result: string(result)})
+	return plan(row), err
+}
+
+func (r *Repository) Get(ctx context.Context, id int64) (Plan, error) {
+	row, err := r.queries.GetPlan(ctx, id)
+	return plan(row), err
+}
+
+func (r *Repository) List(ctx context.Context) ([]Plan, error) {
+	rows, err := r.queries.ListPlans(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	if len(data) > 8*1024*1024 {
-		return nil, 0, fmt.Errorf("слишком большой ответ расчётного сервиса")
+	items := make([]Plan, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, plan(row))
 	}
 
-	return data, res.StatusCode, nil
+	return items, nil
+}
+
+func (r *Repository) Rename(ctx context.Context, id int64, name string) (Plan, error) {
+	row, err := r.queries.RenamePlan(ctx, db.RenamePlanParams{ID: id, Name: name})
+	return plan(row), err
+}
+
+func (r *Repository) Delete(ctx context.Context, id int64) error {
+	count, err := r.queries.DeletePlan(ctx, id)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

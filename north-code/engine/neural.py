@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from planner import assignment, selected_needs
+from common import assignment, selected_needs
 
 
 MODEL_PATH = Path(__file__).parent / 'models' / 'ranker.npz'

@@ -1,24 +1,22 @@
 import json
 import sys
-import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import server
+from planner import load_data, prepare, validate_plan
 
 
-class ApiTests(unittest.TestCase):
+class NeuralApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory()
-        cls.old_path = server.DB_PATH
-        server.DB_PATH = Path(cls.temp.name) / 'test.db'
         cls.http = ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
         cls.thread = threading.Thread(target=cls.http.serve_forever, daemon=True)
         cls.thread.start()
@@ -29,11 +27,8 @@ class ApiTests(unittest.TestCase):
         cls.http.shutdown()
         cls.http.server_close()
         cls.thread.join()
-        server.DB_PATH = cls.old_path
-        cls.temp.cleanup()
 
     def request(self, method, path, body=None):
-        from urllib.request import Request
         raw = None if body is None else json.dumps(body).encode()
         req = Request('http://127.0.0.1:' + str(self.http.server_port) + path, raw,
                       {'Content-Type': 'application/json'}, method=method)
@@ -44,39 +39,31 @@ class ApiTests(unittest.TestCase):
         except HTTPError as error:
             return error.code, json.load(error)
 
-    def test_plan_crud_and_database_persistence(self):
-        status, created = self.request('POST', '/plans', {'name': 'Проверка', 'method': 'exact'})
-        self.assertEqual(status, 201)
-        key = created['id']
-        self.assertEqual(created['result']['cost'], 2482000)
-        status, row = self.request('GET', '/plans/' + str(key))
+    def test_model_health(self):
+        status, body = self.request('GET', '/health')
         self.assertEqual(status, 200)
-        self.assertEqual(row['name'], 'Проверка')
+        self.assertTrue(body['model_ready'])
 
-        with server.connect() as db:
-            self.assertEqual(db.execute('SELECT name FROM plans WHERE id=?', (key,)).fetchone()['name'], 'Проверка')
+    def test_only_neural_routes_are_exposed(self):
+        for path in ['/plans', '/data', '/experiments']:
+            self.assertEqual(self.request('GET', path)[0], 404)
 
-        status, row = self.request('PATCH', '/plans/' + str(key), {'name': 'Новый сценарий'})
+        self.assertEqual(self.request('POST', '/calculate', {})[0], 404)
+        self.assertEqual(self.request('POST', '/recommend', {})[0], 400)
+
+    def test_inference_has_no_exact_solver(self):
+        data = load_data()
+        needs, candidates = prepare(data, 14)
+        body = {'needs': needs, 'candidates': candidates, 'optional': ['M01', 'M02', 'M03', 'M04', 'M05'], 'deadline': 14}
+
+        with patch('planner.milp', side_effect=AssertionError('Точный решатель вызван при inference')):
+            status, result = self.request('POST', '/recommend', body)
+
         self.assertEqual(status, 200)
-        self.assertEqual(row['name'], 'Новый сценарий')
-        self.assertTrue(any(r['id'] == key for r in self.request('GET', '/plans')[1]['plans']))
-        self.assertEqual(self.request('DELETE', '/plans/' + str(key))[0], 200)
-        self.assertEqual(self.request('GET', '/plans/' + str(key))[0], 404)
+        self.assertTrue(result['variants'])
 
-    def test_bad_input_and_unavailable_suppliers(self):
-        for body in [{'method': 'wrong'}, {'budget': -1}, {'deadline': 0}, {'budget': 2.5}, {'disabled_suppliers': ['unknown']}]:
-            self.assertEqual(self.request('POST', '/calculate', body)[0], 400)
-
-        status, result = self.request('POST', '/calculate', {'disabled_suppliers': ['S%02d' % i for i in range(1, 13)]})
-        self.assertEqual(status, 200)
-        self.assertEqual(result['status'], 'infeasible')
-
-    def test_neural_recommendation(self):
-        status, result = self.request('POST', '/calculate', {'method': 'neural'})
-        self.assertEqual(status, 200)
-        self.assertTrue(result['validated'])
-        self.assertEqual(result['method'], 'neural')
-        self.assertFalse(result['optimal'])
+        for variant in result['variants']:
+            self.assertEqual(validate_plan(data, variant['plan'], variant['selected'], 14), [])
 
 
 if __name__ == '__main__':

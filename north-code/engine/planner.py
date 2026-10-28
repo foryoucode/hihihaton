@@ -9,6 +9,8 @@ import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import lil_matrix
 
+from common import assignment, selected_needs
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -176,9 +178,6 @@ def prepare(data, deadline):
     return needs, candidates
 
 
-def selected_needs(needs, selected):
-    return sorted([r for r in needs if r['optional'] == 'no' or r['object_id'] in selected],
-                  key=lambda r: (r['optional'] == 'yes', r['object_id'], r['equipment_type']))
 
 
 def exact_subset(needs, candidates, selected, time_limit=15):
@@ -234,12 +233,6 @@ def exact_subset(needs, candidates, selected, time_limit=15):
     return [assignment(r, p) for i, (r, p) in enumerate(edges) if result.x[i] > 0.5]
 
 
-def assignment(requirement, offer):
-    return {'key': requirement['key'], 'object_id': requirement['object_id'],
-            'equipment_type': requirement['equipment_type'], 'offer_id': offer['offer_id'],
-            'equipment_id': offer['equipment_id'], 'model_name': offer['model']['model_name'],
-            'supplier_id': offer['supplier_id'], 'supplier_name': offer['supplier']['supplier_name'],
-            'unit_price_rub': offer['unit_price_rub'], 'ready_days': offer['ready_days']}
 
 
 def totals(data, plan):
