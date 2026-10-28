@@ -4,6 +4,16 @@ Vue-интерфейс, backend на Go и отдельный Python-серви�
 
 ## Запуск
 
+Самый быстрый вариант — из корня репозитория (на уровень выше `north-code`):
+
+```bash
+docker compose up --build -d --wait
+```
+
+Нужны только Docker и Compose v2. Сайт доступен на `http://localhost:8080`. Go, Node.js и Python на компьютере устанавливать не требуется. История хранится в volume `station_data`, миграции применяются автоматически, модель уже обучена. Остановка: `docker compose down`. Просмотр журналов: `docker compose logs -f`.
+
+Ниже — запуск без Docker для разработки.
+
 Нужны Python 3.12+, Go 1.23.4+, GCC для SQLite-драйвера, Node.js 20.19+ и npm. Команды из `north-code`:
 
 ```bash

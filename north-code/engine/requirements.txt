@@ -1,2 +1,2 @@
-numpy==2.3.5
+-r requirements-inference.txt
 scipy==1.17.0

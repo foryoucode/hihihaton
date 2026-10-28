@@ -1,0 +1,53 @@
+name: north-code
+
+services:
+  app:
+    build:
+      context: ./north-code
+      dockerfile: docker/app.Dockerfile
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      NORTH_ROOT: /app
+      NORTH_DB_PATH: /app/runtime/plans.db
+      APP_ADDRESS: 0.0.0.0:8080
+      STATIC_DIR: /app/client/dist
+      NEURAL_URL: http://neural:8091
+      NO_PROXY: neural,localhost,127.0.0.1
+      no_proxy: neural,localhost,127.0.0.1
+      GIN_MODE: release
+    volumes:
+      - station_data:/app/runtime
+    depends_on:
+      neural:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/server", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+  neural:
+    build:
+      context: ./north-code
+      dockerfile: docker/neural.Dockerfile
+    environment:
+      NEURAL_HOST: 0.0.0.0
+      NEURAL_PORT: "8091"
+      OPENBLAS_NUM_THREADS: "1"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; client=urllib.request.build_opener(urllib.request.ProxyHandler({})); response=client.open('http://127.0.0.1:8091/health',timeout=3); assert json.load(response)['model_ready']"
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  station_data:
