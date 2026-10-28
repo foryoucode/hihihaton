@@ -1,0 +1,7 @@
+.venv/
+runtime/
+__pycache__/
+*.pyc
+node_modules/
+client/dist/
+backend/server
