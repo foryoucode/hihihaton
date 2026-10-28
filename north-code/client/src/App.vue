@@ -1,12 +1,13 @@
 <script>
-import axios from 'axios';
+import axios from './api';
 
 export default {
     data() {
         return {
+            isDemo: import.meta.env.VITE_DEMO === 'true',
             tab: 'station',
             method: 'exact',
-            budget: 2600000,
+            budget: import.meta.env.VITE_DEMO === 'true' ? 1900000 : 2600000,
             deadline: 14,
             disabledSuppliers: [],
 
@@ -16,6 +17,8 @@ export default {
             loading: true,
             error: '',
             notice: '',
+            videoReady: false,
+            motionAllowed: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 
             history: [],
             planName: '',
@@ -111,6 +114,7 @@ export default {
                 for (let method of methods) {
                     let res = await axios.post('/api/calculate', this.params(method));
                     this.results[method] = res.data;
+                    if (res.data.demo_notice) this.notice = res.data.demo_notice;
                 }
             } catch (error) {
                 this.showError(error);
@@ -319,7 +323,7 @@ export default {
                     res.data.counts.offers +
                     ' предложений, ' +
                     res.data.counts.requirements +
-                    ' потребностей. Данные сохранены в PostgreSQL.';
+                    (this.isDemo ? ' потребностей. Это демо: данные сохранены в браузере.' : ' потребностей. Данные сохранены в PostgreSQL.');
                 this.tab = 'station';
             } catch (error) {
                 this.showError(error);
@@ -332,6 +336,11 @@ export default {
             this.tab = tab;
             this.error = '';
             if (tab === 'history') this.loadHistory();
+        },
+
+        resetDemo() {
+            try { localStorage.removeItem('north-code-demo-v1'); } catch {}
+            window.location.reload();
         },
     },
     async mounted() {
@@ -348,9 +357,25 @@ export default {
 </script>
 
 <template>
+    <div class="arctic-background" aria-hidden="true">
+        <img src="./assets/arctic-station.jpg" alt="" decoding="async" fetchpriority="high" />
+        <video
+            v-if="motionAllowed"
+            src="./assets/arctic-station.mp4"
+            :class="{ ready: videoReady }"
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="auto"
+            tabindex="-1"
+            @playing="videoReady = true"
+            @error="videoReady = false"
+        ></video>
+    </div>
     <div class="app-layout">
         <aside class="sidebar">
-            <a class="brand" href="/" aria-label="Северный код — главная">
+            <a class="brand" href="#" @click.prevent="openTab('station')" aria-label="Северный код — главная">
                 <span class="brand-mark">✳</span>
                 <span>
                     СЕВЕРНЫЙ
@@ -375,8 +400,8 @@ export default {
             </nav>
             <div class="sidebar-bottom">
                 <span class="status-dot"></span>
-                Станция «Северная»
-                <small>ST01 · Арктическая экспедиция</small>
+                {{ data?.station?.[0]?.station_name || 'Станция' }}
+                <small>{{ data?.station?.[0]?.station_id || '—' }} · Арктическая экспедиция</small>
                 <div class="sidebar-line"></div>
                 <span class="small-muted">ПЛАНИРОВАНИЕ / V 1.0</span>
             </div>
@@ -390,11 +415,16 @@ export default {
                     {{ nav.find((item) => item.id === tab)?.name }}
                 </span>
                 <span class="station-code">
-                    ● ST01
-                    <span>СЕВЕРНАЯ</span>
+                    ● {{ data?.station?.[0]?.station_id || '—' }}
+                    <span>ЭКСПЕДИЦИЯ</span>
                 </span>
             </header>
             <div class="page-content">
+                <div v-if="isDemo" class="demo-banner" role="status">
+                    <div><strong>Автономный просмотр</strong><span>Можно переключать экраны, менять бюджет, смотреть закупки и сохранять планы. Показаны готовые примеры, всё работает локально.</span></div>
+                    <button class="secondary-btn" @click="resetDemo">Сбросить демо ↻</button>
+                </div>
+
                 <div class="page-heading">
                     <div>
                         <div class="eyebrow">ЭКСПЕДИЦИЯ / ВОССТАНОВЛЕНИЕ ПОСЛЕ БУРИ</div>
@@ -430,7 +460,7 @@ export default {
                 <div v-if="loading && !data" class="empty-state">Загружаем данные станции…</div>
 
                 <div v-if="data" class="dataset-bar">
-                    <span>PostgreSQL · Набор #{{ data.dataset.id }} · {{ data.dataset.name }}</span>
+                    <span>{{ isDemo ? 'Демо' : 'PostgreSQL' }} · Набор #{{ data.dataset.id }} · {{ data.dataset.name }}</span>
                     <button class="text-btn" :disabled="busy" @click="latestData">Последний набор ↻</button>
                 </div>
 
@@ -555,7 +585,7 @@ export default {
                                         <td>
                                             {{
                                                 results[key].status === 'ok'
-                                                    ? 'План проверен'
+                                                    ? (isDemo ? 'Готовый пример' : 'План проверен')
                                                     : results[key].status === 'infeasible'
                                                       ? 'Невозможно'
                                                       : 'Не найден'
@@ -596,7 +626,7 @@ export default {
                             <span class="result-status">
                                 <span class="status-dot"></span>
                                 {{
-                                    method === 'exact'
+                                    isDemo ? 'Пример рассчитанного плана' : method === 'exact'
                                         ? 'Оптимальный план найден'
                                         : 'OR-Tools подтвердил оптимальный план'
                                 }}
@@ -696,12 +726,12 @@ export default {
                                             class="budget-ring"
                                             :style="{
                                                 background:
-                                                    'conic-gradient(#d3ed83 0 ' +
+                                                    'conic-gradient(#e1c19c 0 ' +
                                                     (result.equipment_cost / Math.max(result.cost, result.budget)) *
                                                         100 +
-                                                    '%, #648a7f 0 ' +
+                                                    '%, #7c9fb7 0 ' +
                                                     (result.cost / Math.max(result.cost, result.budget)) * 100 +
-                                                    '%, #24363b 0 100%)',
+                                                    '%, #344a5d 0 100%)',
                                             }"
                                         >
                                             <div>
@@ -1031,7 +1061,7 @@ export default {
                 <template v-if="data && tab === 'comparison'">
                     <section class="panel">
                         <div class="panel-heading">
-                            <h2>Два точных алгоритма</h2>
+                            <h2>Два точных алгоритма</h2><p v-if="isDemo">В демо для обоих методов показан готовый пример. Настоящие решатели доступны в полной версии приложения.</p>
                             <button class="primary-btn" :disabled="busy" @click="calculate(true)">
                                 {{ busy ? 'Считаем…' : 'Сравнить методы' }}
                             </button>
@@ -1084,7 +1114,7 @@ export default {
                                         <td>
                                             {{
                                                 results[key].status === 'ok'
-                                                    ? 'Оптимум подтверждён'
+                                                    ? (isDemo ? 'Готовый пример' : 'Оптимум подтверждён')
                                                     : 'Восстановление невозможно'
                                             }}
                                         </td>
@@ -1136,7 +1166,7 @@ export default {
                                 </label>
                             </div>
                             <button class="primary-btn" type="submit" :disabled="busy">
-                                {{ busy ? 'Проверяем и сохраняем…' : 'Импортировать в PostgreSQL' }}
+                                {{ busy ? 'Проверяем и сохраняем…' : (isDemo ? 'Загрузить в демо' : 'Импортировать в PostgreSQL') }}
                             </button>
                         </form>
                     </section>

@@ -5,4 +5,6 @@ runtime
 **/*.pyc
 client/node_modules
 client/dist
+client/dist-demo
+client/north-code-demo.html
 backend/server
