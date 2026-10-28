@@ -1,0 +1,4 @@
+supplier_id;supplier_name;delivery_cost_rub;delivery_days
+S01;Тундра Комплект;17000;3
+S02;Снежный склад;9000;6
+S03;Дальний караван;4000;10
