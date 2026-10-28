@@ -9,21 +9,25 @@ export default {
             budget: 2600000,
             deadline: 14,
             disabledSuppliers: [],
+
             data: null,
             results: {},
             busy: false,
             loading: true,
             error: '',
             notice: '',
+
             history: [],
             planName: '',
             selectedObject: '',
+
             searchType: 'Генератор',
             searchCapacity: 8,
             searchTemperature: -30,
             models: [],
             searched: false,
             selectedModel: '',
+
             nav: [
                 { id: 'station', name: 'Станция', icon: '⌘' },
                 { id: 'purchases', name: 'План закупок', icon: '▤' },
@@ -37,21 +41,27 @@ export default {
         result() {
             return this.results[this.method] || null;
         },
+
         ready() {
             return this.result?.status === 'ok';
         },
+
         report() {
             return this.data?.model;
         },
+
         types() {
             return [...new Set((this.data?.equipment || []).map((item) => item.equipment_type))];
         },
+
         objectDetails() {
             return (this.result?.diagnosis || []).filter((item) => item.object_id === this.selectedObject);
         },
+
         selectedOffers() {
             return (this.data?.offers || []).filter((item) => item.equipment_id === this.selectedModel);
         },
+
         groups() {
             if (!this.ready) return [];
             return [...new Set(this.result.plan.map((item) => item.supplier_id))].map((id) => ({
@@ -59,6 +69,7 @@ export default {
                 items: this.result.plan.filter((item) => item.supplier_id === id),
             }));
         },
+
         matchedExperiments() {
             return (this.report?.experiments || []).filter((item) => item.matches_optimum).length;
         },
@@ -67,9 +78,11 @@ export default {
         money(value) {
             return Number(value || 0).toLocaleString('ru-RU') + ' ₽';
         },
+
         methodName(method) {
             return method === 'exact' ? 'Точный расчёт' : 'Нейросеть';
         },
+
         params(method = this.method) {
             return {
                 method,
@@ -78,20 +91,25 @@ export default {
                 disabled_suppliers: this.disabledSuppliers,
             };
         },
+
         clearResults() {
             this.results = {};
             this.selectedObject = '';
             this.notice = '';
         },
+
         showError(error) {
             this.error =
                 error.response?.data?.message || 'Не удалось выполнить запрос. Проверьте подключение к серверу.';
         },
+
         async calculate(compare = false) {
             if (this.busy) return;
+
             this.busy = true;
             this.error = '';
             this.notice = '';
+
             try {
                 let methods = compare ? ['exact', 'neural'] : [this.method];
                 for (let method of methods) {
@@ -104,8 +122,10 @@ export default {
                 this.busy = false;
             }
         },
+
         async search() {
             this.error = '';
+
             try {
                 let res = await axios.post('/api/search', {
                     equipment_type: this.searchType,
@@ -119,6 +139,7 @@ export default {
                 this.showError(error);
             }
         },
+
         offerInfo(offer) {
             let supplier = this.data.suppliers.find((item) => item.supplier_id === offer.supplier_id);
             let model = this.data.equipment.find((item) => item.equipment_id === offer.equipment_id);
@@ -133,6 +154,7 @@ export default {
                 reason: reasons.join(' · ') || 'Подходит для одной единицы',
             };
         },
+
         async loadHistory() {
             try {
                 let res = await axios.get('/api/plans');
@@ -141,10 +163,13 @@ export default {
                 this.showError(error);
             }
         },
+
         async savePlan() {
             if (!this.result || this.busy) return;
+
             this.busy = true;
             this.error = '';
+
             try {
                 await axios.post('/api/plans', {
                     ...this.params(),
@@ -158,8 +183,10 @@ export default {
                 this.busy = false;
             }
         },
+
         async renamePlan(item) {
             this.error = '';
+
             try {
                 await axios.patch('/api/plans/' + item.id, { name: item.name });
             } catch (error) {
@@ -167,8 +194,10 @@ export default {
                 await this.loadHistory();
             }
         },
+
         async deletePlan(item) {
             this.error = '';
+
             try {
                 await axios.delete('/api/plans/' + item.id);
                 await this.loadHistory();
@@ -176,6 +205,7 @@ export default {
                 this.showError(error);
             }
         },
+
         openPlan(item) {
             this.budget = item.result.budget;
             this.deadline = item.result.deadline;
@@ -186,6 +216,7 @@ export default {
             this.tab = 'station';
             this.notice = 'Открыт сохранённый расчёт от ' + item.created_at + ' UTC';
         },
+
         downloadReport() {
             let file = new Blob([JSON.stringify(this.result, null, 2)], { type: 'application/json;charset=utf-8' });
             let url = URL.createObjectURL(file);
@@ -195,6 +226,7 @@ export default {
             link.click();
             URL.revokeObjectURL(url);
         },
+
         downloadPurchases() {
             let rows = [['Объект', 'Модель', 'Предложение', 'Поставщик', 'Количество', 'Цена', 'Готовность, дни']];
             for (let item of this.result.plan) {
@@ -223,6 +255,7 @@ export default {
             link.click();
             URL.revokeObjectURL(url);
         },
+
         openTab(tab) {
             this.tab = tab;
             this.error = '';

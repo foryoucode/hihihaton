@@ -59,6 +59,7 @@ input[type=checkbox] {
 label {
     font-size: 12px;
     color: #b2c1c3;
+
     display: flex;
     flex-direction: column;
     gap: 9px;
@@ -102,11 +103,13 @@ p {
     width: 226px;
     min-width: 226px;
     height: 100vh;
+
     position: sticky;
     top: 0;
     padding: 32px 18px 24px;
     background: #101f24;
     border-right: 1px solid var(--border);
+
     display: flex;
     flex-direction: column;
 }
@@ -222,6 +225,7 @@ p {
     height: 70px;
     padding: 0 38px;
     border-bottom: 1px solid var(--border);
+
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -371,6 +375,7 @@ p {
     border: 0;
     padding: 0;
     margin: 20px 0 0;
+
     display: grid;
     grid-template-columns: 1.3fr .65fr auto;
     gap: 15px;
@@ -551,6 +556,7 @@ p {
     padding: 12px;
     color: #e2ebe1;
     text-align: left;
+
     display: flex;
     flex-direction: column;
     min-height: 155px;
@@ -661,6 +667,7 @@ p {
     width: 156px;
     height: 156px;
     border-radius: 50%;
+
     display: grid;
     place-items: center;
 }
@@ -670,6 +677,7 @@ p {
     height: 121px;
     border-radius: 50%;
     background: #122126;
+
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -924,6 +932,7 @@ td strong {
     border: 2px solid #47604d;
     border-top-color: var(--lime);
     border-radius: 50%;
+
     animation: spin 1s linear infinite;
 }
 
@@ -976,6 +985,7 @@ td strong {
     font-size: 10px;
     color: var(--lime);
     letter-spacing: 1px;
+
     display: block;
     margin-bottom: 15px;
 }

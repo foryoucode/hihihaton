@@ -33,12 +33,15 @@ func (r *Repository) Request(ctx context.Context, method, path string, body []by
 		return nil, 0, err
 	}
 	defer res.Body.Close()
+
 	data, err := io.ReadAll(io.LimitReader(res.Body, 8*1024*1024+1))
 	if err != nil {
 		return nil, 0, err
 	}
+
 	if len(data) > 8*1024*1024 {
 		return nil, 0, fmt.Errorf("слишком большой ответ расчётного сервиса")
 	}
+
 	return data, res.StatusCode, nil
 }

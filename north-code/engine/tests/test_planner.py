@@ -64,6 +64,7 @@ class PlannerTests(unittest.TestCase):
     def test_model_uses_no_exact_solver(self):
         with patch('planner.milp', side_effect=AssertionError('MILP вызван в нейросетевом режиме')):
             result = solve(self.data, 2600000, 14, 'neural', Ranker.load())
+
         self.assertEqual(result['status'], 'ok')
         self.assertEqual(result['optional_count'], 3)
         self.assertFalse(result['optimal'])
@@ -90,6 +91,7 @@ class PlannerTests(unittest.TestCase):
     def test_catalog_works_without_station_or_suppliers(self):
         with patch('planner.ROOT', Path(__file__).resolve().parents[2]):
             data = load_data(catalog_only=True)
+
         self.assertEqual(set(data), {'equipment'})
         self.assertTrue(find_equipment(data, 'Генератор', 8, -30))
 

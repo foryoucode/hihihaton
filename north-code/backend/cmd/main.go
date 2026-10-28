@@ -16,10 +16,12 @@ func main() {
 	if engineURL == "" {
 		engineURL = "http://127.0.0.1:8091"
 	}
+
 	address := os.Getenv("APP_ADDRESS")
 	if address == "" {
 		address = "127.0.0.1:8080"
 	}
+
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {
 		staticDir = "../client/dist"
@@ -27,6 +29,7 @@ func main() {
 	repo := repository.NewRepository(engineURL)
 	services := service.NewService(repo)
 	handlers := handler.NewHandler(services)
+
 	server := &http.Server{
 		Addr: address, Handler: handlers.InitRoutes(staticDir),
 		ReadHeaderTimeout: 5 * time.Second,

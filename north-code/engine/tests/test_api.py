@@ -37,6 +37,7 @@ class ApiTests(unittest.TestCase):
         raw = None if body is None else json.dumps(body).encode()
         req = Request('http://127.0.0.1:' + str(self.http.server_port) + path, raw,
                       {'Content-Type': 'application/json'}, method=method)
+
         try:
             with self.opener.open(req, timeout=60) as res:
                 return res.status, json.load(res)
@@ -51,8 +52,10 @@ class ApiTests(unittest.TestCase):
         status, row = self.request('GET', '/plans/' + str(key))
         self.assertEqual(status, 200)
         self.assertEqual(row['name'], 'Проверка')
+
         with server.connect() as db:
             self.assertEqual(db.execute('SELECT name FROM plans WHERE id=?', (key,)).fetchone()['name'], 'Проверка')
+
         status, row = self.request('PATCH', '/plans/' + str(key), {'name': 'Новый сценарий'})
         self.assertEqual(status, 200)
         self.assertEqual(row['name'], 'Новый сценарий')
@@ -63,6 +66,7 @@ class ApiTests(unittest.TestCase):
     def test_bad_input_and_unavailable_suppliers(self):
         for body in [{'method': 'wrong'}, {'budget': -1}, {'deadline': 0}, {'budget': 2.5}, {'disabled_suppliers': ['unknown']}]:
             self.assertEqual(self.request('POST', '/calculate', body)[0], 400)
+
         status, result = self.request('POST', '/calculate', {'disabled_suppliers': ['S%02d' % i for i in range(1, 13)]})
         self.assertEqual(status, 200)
         self.assertEqual(result['status'], 'infeasible')

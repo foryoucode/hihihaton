@@ -25,9 +25,11 @@ func (s *Service) Request(ctx context.Context, method, path string, body []byte)
 		if err := json.Unmarshal(body, &req); err != nil {
 			return nil, 0, ErrBadRequest
 		}
+
 		if req.Method != "" && req.Method != "exact" && req.Method != "neural" {
 			return nil, 0, ErrBadRequest
 		}
 	}
+
 	return s.repo.Request(ctx, method, path, body)
 }
